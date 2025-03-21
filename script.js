@@ -13,7 +13,7 @@ function preload() {
 }
 
 function setup() {
-    let canvas = createCanvas(1024, 768); 
+    let canvas = createCanvas(windowWidth, windowHeight);
     canvas.parent('canvas-container');
     video = createCapture(VIDEO);
     video.size(width, height);
@@ -88,64 +88,105 @@ function draw() {
 
 
 
-
+function getPersonBoundingBox() {
+    let minX = width, minY = height, maxX = 0, maxY = 0;
+    let found = false;
+    for (let i = 0; i < poses.length; i++) {
+      let pose = poses[i].pose;
+      for (let keypoint of pose.keypoints) {
+        // Używamy wyższego progu pewności, np. 0.5
+        if (keypoint.score > 0.5) {
+          found = true;
+          minX = min(minX, keypoint.position.x);
+          minY = min(minY, keypoint.position.y);
+          maxX = max(maxX, keypoint.position.x);
+          maxY = max(maxY, keypoint.position.y);
+        }
+      }
+    }
+    if (found) {
+      // Opcjonalnie dodajemy margines
+      let margin = 50;
+      minX = max(0, minX - margin);
+      minY = max(0, minY - margin);
+      maxX = min(width, maxX + margin);
+      maxY = min(height, maxY + margin);
+      return { minX, minY, maxX, maxY };
+    } else {
+      return null;
+    }
+  }
+  
 
 
 // Rysowanie siatki reagującej na ruch + dźwięk
 function drawDistortedGrid() {
     background(0);
-    stroke(255, 180);
+    stroke(255, 130);
     strokeWeight(1);
+  
 
-    let gridSize = 20 + pulseFactor;
+    let gridSize = 35 + pulseFactor;
     let distortions = [];
-
+    // Zbieramy punkty z kluczowych punktów z wyższym progiem pewności
     for (let i = 0; i < poses.length; i++) {
-        let pose = poses[i].pose;
-        for (let keypoint of pose.keypoints) {
-            if (keypoint.score > 0.2) {
-                distortions.push({ x: keypoint.position.x, y: keypoint.position.y });
-            }
+      let pose = poses[i].pose;
+      for (let keypoint of pose.keypoints) {
+        if (keypoint.score > 0.5) {
+          distortions.push({ x: keypoint.position.x, y: keypoint.position.y });
         }
+      }
     }
+    
+    // Obliczamy bounding box, ale go nie używamy do ograniczenia całego rysowania
+    let bbox = getPersonBoundingBox();
+  
 
+    // Rysujemy pionowe linie siatki na całym kanwie
     for (let x = 0; x < width; x += gridSize) {
-        beginShape();
-        for (let y = 0; y < height; y += gridSize) {
-            let bendX = x, bendY = y;
-            for (let d of distortions) {
-                let distance = dist(x, y, d.x, d.y);
-                if (distance < 150) { 
-                    let force = map(distance, 0, 150, 40, 0);
-                    let angle = atan2(y - d.y, x - d.x);
-                    bendX -= cos(angle) * force;
-                    bendY -= sin(angle) * force;
-                }
+      beginShape();
+      for (let y = 0; y < height; y += gridSize) {
+        let bendX = x, bendY = y;
+        // Jeśli bounding box istnieje i punkt leży w jego obrębie, zastosuj deformację
+        if (bbox && x >= bbox.minX && x <= bbox.maxX && y >= bbox.minY && y <= bbox.maxY) {
+          for (let d of distortions) {
+            let distance = dist(x, y, d.x, d.y);
+            if (distance < 150) { 
+              let force = map(distance, 0, 120, 0, 0);
+              let angle = atan2(y - d.y, x - d.x);
+              bendX -= cos(angle) * force;
+              bendY -= sin(angle) * force;
             }
-            vertex(bendX, bendY);
+          }
         }
-        endShape();
+        vertex(bendX, bendY);
+      }
+      endShape();
     }
-
+  
+    // Rysujemy poziome linie siatki na całym kanwie
     for (let y = 0; y < height; y += gridSize) {
-        beginShape();
-        for (let x = 0; x < width; x += gridSize) {
-            let bendX = x, bendY = y;
-            for (let d of distortions) {
-                let distance = dist(x, y, d.x, d.y);
-                if (distance < 150) {
-                    let force = map(distance, 0, 150, 40, 0);
-                    let angle = atan2(y - d.y, x - d.x);
-                    bendX -= cos(angle) * force;
-                    bendY -= sin(angle) * force;
-                }
+      beginShape();
+      for (let x = 0; x < width; x += gridSize) {
+        let bendX = x, bendY = y;
+        if (bbox && x >= bbox.minX && x <= bbox.maxX && y >= bbox.minY && y <= bbox.maxY) {
+          for (let d of distortions) {
+            let distance = dist(x, y, d.x, d.y);
+            if (distance < 150) {
+              let force = map(distance, 0, 150, 40, 0);
+              let angle = atan2(y - d.y, x - d.x);
+              bendX -= cos(angle) * force;
+              bendY -= sin(angle) * force;
             }
-            vertex(bendX, bendY);
+          }
         }
-        endShape();
+        vertex(bendX, bendY);
+      }
+      endShape();
     }
-}
-
+  }
+  
+  
 
 // Lista kluczowych punktów dla twarzy i dłoni
 const faceParts = ["nose", "leftEye", "rightEye", "leftEar", "rightEar"];
@@ -259,3 +300,8 @@ function updateParticles() {
         particles[i].show();
     }
 } 
+
+function windowResized() {
+    resizeCanvas(windowWidth, windowHeight);
+    video.size(width, height);
+}
